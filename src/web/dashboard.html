@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pneumatik-Prüfstand Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            font-size: 28px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #27ae60;
+            color: white;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .status-badge.offline {
+            background: #e74c3c;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .card h2 {
+            color: #2c3e50;
+            font-size: 18px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #ecf0f1;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        .metric:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+
+        .metric-value {
+            color: #2c3e50;
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        .metric-value.large {
+            font-size: 36px;
+            color: #3498db;
+        }
+
+        .chart-container {
+            width: 100%;
+            height: 300px;
+            margin-top: 15px;
+        }
+
+        .test-list {
+            list-style: none;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .test-item {
+            padding: 12px;
+            background: #f8f9fa;
+            margin-bottom: 8px;
+            border-radius: 5px;
+            border-left: 4px solid #3498db;
+        }
+
+        .test-item.running {
+            border-left-color: #f39c12;
+            animation: pulse 2s infinite;
+        }
+
+        .test-item.completed {
+            border-left-color: #27ae60;
+        }
+
+        .test-item.failed {
+            border-left-color: #e74c3c;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .test-item-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .test-item-title {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .test-item-status {
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: #3498db;
+            color: white;
+        }
+
+        .test-item-details {
+            font-size: 12px;
+            color: #7f8c8d;
+        }
+
+        .refresh-btn {
+            padding: 10px 20px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: #2980b9;
+        }
+
+        .alert {
+            padding: 15px;
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+
+        .alert.error {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+        }
+
+        .component-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #e8f4f8;
+            color: #2c3e50;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-right: 5px;
+        }
+
+        canvas {
+            max-width: 100%;
+        }
+
+        .login-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .login-box {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+            width: 400px;
+        }
+
+        .login-box h2 {
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #bdc3c7;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 12px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .login-btn:hover {
+            background: #2980b9;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+</head>
+<body>
+    <!-- Login Overlay -->
+    <div id="loginOverlay" class="login-overlay">
+        <div class="login-box">
+            <h2>🔧 Prüfstand Login</h2>
+            <div class="input-group">
+                <label>Benutzername</label>
+                <input type="text" id="username" placeholder="Benutzername eingeben">
+            </div>
+            <div class="input-group">
+                <label>Passwort</label>
+                <input type="password" id="password" placeholder="Passwort eingeben">
+            </div>
+            <button class="login-btn" onclick="login()">Anmelden</button>
+            <div id="loginError" style="color: #e74c3c; margin-top: 10px; display: none;"></div>
+        </div>
+    </div>
+
+    <div class="container" id="dashboard" style="display: none;">
+        <!-- Header -->
+        <div class="header">
+            <h1>🔧 Pneumatik-Prüfstand Dashboard</h1>
+            <div>
+                <span id="statusBadge" class="status-badge">⚫ Offline</span>
+                <button class="refresh-btn" onclick="refreshData()">🔄 Aktualisieren</button>
+            </div>
+        </div>
+
+        <!-- Alerts -->
+        <div id="alerts"></div>
+
+        <!-- Metrics Grid -->
+        <div class="grid">
+            <!-- System Status -->
+            <div class="card">
+                <h2>System Status</h2>
+                <div class="metric">
+                    <span class="metric-label">Betriebszeit</span>
+                    <span class="metric-value" id="uptime">0 min</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Aktive Tests</span>
+                    <span class="metric-value" id="activeTests">0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Datenbank</span>
+                    <span class="metric-value" id="dbSize">0 MB</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Arduino</span>
+                    <span class="metric-value" id="arduino">⚫</span>
+                </div>
+            </div>
+
+            <!-- Components -->
+            <div class="card">
+                <h2>Komponenten</h2>
+                <div class="metric">
+                    <span class="metric-label">Gesamt</span>
+                    <span class="metric-value large" id="totalComponents">0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Tests gesamt</span>
+                    <span class="metric-value" id="totalTests">0</span>
+                </div>
+            </div>
+
+            <!-- Test Statistics -->
+            <div class="card">
+                <h2>Test-Statistiken</h2>
+                <div class="metric">
+                    <span class="metric-label">Schaltzyklen</span>
+                    <span class="metric-value" id="totalCycles">0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Betriebsstunden</span>
+                    <span class="metric-value" id="totalHours">0 h</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Abgeschlossen</span>
+                    <span class="metric-value" id="completedTests">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts and Lists -->
+        <div class="grid">
+            <!-- Test Runs Chart -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <h2>Test-Läufe (letzte 24h)</h2>
+                <div class="chart-container">
+                    <canvas id="testRunsChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Active Tests -->
+            <div class="card" style="grid-column: span 2;">
+                <h2>Aktuelle Test-Läufe</h2>
+                <ul class="test-list" id="testList">
+                    <li class="test-item">
+                        <div class="test-item-details">Keine aktiven Tests</div>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Calibration Due -->
+            <div class="card">
+                <h2>Fällige Kalibrierungen</h2>
+                <ul class="test-list" id="calibrationList">
+                    <li class="test-item-details">Lade Kalibrierungen...</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api';
+        let authToken = null;
+        let testRunsChart = null;
+
+        // Login
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    authToken = btoa(`${username}:${password}`);
+                    document.getElementById('loginOverlay').style.display = 'none';
+                    document.getElementById('dashboard').style.display = 'block';
+                    initializeDashboard();
+                } else {
+                    document.getElementById('loginError').textContent = data.message || 'Login fehlgeschlagen';
+                    document.getElementById('loginError').style.display = 'block';
+                }
+            } catch (error) {
+                document.getElementById('loginError').textContent = 'Verbindungsfehler: ' + error.message;
+                document.getElementById('loginError').style.display = 'block';
+            }
+        }
+
+        // Initialize Dashboard
+        async function initializeDashboard() {
+            await refreshData();
+            initializeChart();
+
+            // Auto-refresh every 10 seconds
+            setInterval(refreshData, 10000);
+        }
+
+        // Refresh Data
+        async function refreshData() {
+            try {
+                await Promise.all([
+                    updateSystemStatus(),
+                    updateStatistics(),
+                    updateTestRuns(),
+                    updateCalibration()
+                ]);
+
+                document.getElementById('statusBadge').textContent = '🟢 Online';
+                document.getElementById('statusBadge').classList.remove('offline');
+            } catch (error) {
+                console.error('Refresh error:', error);
+                document.getElementById('statusBadge').textContent = '🔴 Offline';
+                document.getElementById('statusBadge').classList.add('offline');
+            }
+        }
+
+        // API Helper
+        async function apiCall(endpoint) {
+            const response = await fetch(`${API_BASE}${endpoint}`, {
+                headers: {
+                    'Authorization': `Basic ${authToken}`
+                }
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return await response.json();
+        }
+
+        // Update System Status
+        async function updateSystemStatus() {
+            const data = await apiCall('/system/status');
+
+            document.getElementById('uptime').textContent = `${Math.round(data.uptime_minutes)} min`;
+            document.getElementById('activeTests').textContent = data.active_tests;
+            document.getElementById('dbSize').textContent = `${data.database_size_mb} MB`;
+            document.getElementById('arduino').textContent = data.arduino_connected ? '🟢' : '⚫';
+        }
+
+        // Update Statistics
+        async function updateStatistics() {
+            const data = await apiCall('/statistics/overview');
+
+            document.getElementById('totalComponents').textContent = data.total_components;
+            document.getElementById('totalTests').textContent = data.total_test_runs;
+            document.getElementById('totalCycles').textContent = data.total_cycles.toLocaleString();
+            document.getElementById('totalHours').textContent = `${data.total_hours} h`;
+            document.getElementById('completedTests').textContent = data.completed_tests;
+        }
+
+        // Update Test Runs
+        async function updateTestRuns() {
+            const data = await apiCall('/tests?limit=10');
+            const list = document.getElementById('testList');
+
+            if (data.length === 0) {
+                list.innerHTML = '<li class="test-item"><div class="test-item-details">Keine aktiven Tests</div></li>';
+                return;
+            }
+
+            list.innerHTML = data.map(test => `
+                <li class="test-item ${test.status.toLowerCase()}">
+                    <div class="test-item-header">
+                        <span class="test-item-title">Test #${test.id}</span>
+                        <span class="test-item-status">${test.status}</span>
+                    </div>
+                    <div class="test-item-details">
+                        <span class="component-badge">Komponente #${test.component_id}</span>
+                        Zyklen: ${test.cycles_completed}/${test.total_cycles}
+                        <br>Operator: ${test.operator}
+                    </div>
+                </li>
+            `).join('');
+        }
+
+        // Update Calibration
+        async function updateCalibration() {
+            const data = await apiCall('/calibration/due?days=30');
+            const list = document.getElementById('calibrationList');
+
+            if (data.equipment.length === 0) {
+                list.innerHTML = '<li class="test-item-details">Keine fälligen Kalibrierungen</li>';
+                return;
+            }
+
+            list.innerHTML = data.equipment.map(eq => {
+                const daysLeft = Math.ceil((new Date(eq.next_calibration_date) - new Date()) / (1000 * 60 * 60 * 24));
+                return `
+                    <li class="test-item">
+                        <div class="test-item-title">${eq.name}</div>
+                        <div class="test-item-details">
+                            Nr: ${eq.equipment_id}<br>
+                            Fällig in: ${daysLeft} Tagen
+                        </div>
+                    </li>
+                `;
+            }).join('');
+
+            // Alert if calibrations due soon
+            if (data.equipment.length > 0) {
+                showAlert(`${data.equipment.length} Kalibrierung(en) fällig in den nächsten 30 Tagen!`, 'warning');
+            }
+        }
+
+        // Initialize Chart
+        function initializeChart() {
+            const ctx = document.getElementById('testRunsChart').getContext('2d');
+            testRunsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Test-Läufe',
+                        data: [],
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        // Show Alert
+        function showAlert(message, type = 'warning') {
+            const alerts = document.getElementById('alerts');
+            const alert = document.createElement('div');
+            alert.className = `alert ${type === 'error' ? 'error' : ''}`;
+            alert.textContent = message;
+            alerts.appendChild(alert);
+
+            setTimeout(() => alert.remove(), 5000);
+        }
+
+        // Enter key for login
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('password').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') login();
+            });
+        });
+    </script>
+</body>
+</html>
