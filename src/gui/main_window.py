@@ -292,6 +292,32 @@ class TestStandMainWindow(QMainWindow):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
+        # Arduino connection group
+        arduino_group = QGroupBox("Arduino-Verbindung")
+        arduino_layout = QHBoxLayout()
+
+        self.arduino_port_combo = QComboBox()
+        self.refresh_arduino_ports()
+        arduino_layout.addWidget(QLabel("Port:"))
+        arduino_layout.addWidget(self.arduino_port_combo)
+
+        self.btn_refresh_ports = QPushButton("↻")
+        self.btn_refresh_ports.setMaximumWidth(40)
+        self.btn_refresh_ports.clicked.connect(self.refresh_arduino_ports)
+        arduino_layout.addWidget(self.btn_refresh_ports)
+
+        self.btn_connect_arduino = QPushButton("🔌 Verbinden")
+        self.btn_connect_arduino.clicked.connect(self.toggle_arduino_connection)
+        arduino_layout.addWidget(self.btn_connect_arduino)
+
+        self.arduino_status_label = QLabel("⚫ Nicht verbunden")
+        self.arduino_status_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+        arduino_layout.addWidget(self.arduino_status_label)
+
+        arduino_layout.addStretch()
+        arduino_group.setLayout(arduino_layout)
+        layout.addWidget(arduino_group)
+
         # Test configuration
         config_group = QGroupBox("Test-Konfiguration")
         config_layout = QFormLayout()
@@ -718,6 +744,61 @@ class TestStandMainWindow(QMainWindow):
 
         except Exception as e:
             QMessageBox.critical(self, "Fehler", f"Fehler bei der Analyse: {str(e)}")
+
+    # ===== Arduino Connection =====
+
+    def refresh_arduino_ports(self):
+        """Refresh list of available Arduino ports"""
+        from ..controllers.arduino_controller import ArduinoController
+
+        self.arduino_port_combo.clear()
+        ports = ArduinoController.list_available_ports()
+
+        if ports:
+            for port in ports:
+                self.arduino_port_combo.addItem(port)
+        else:
+            self.arduino_port_combo.addItem("Keine Ports gefunden")
+
+    def toggle_arduino_connection(self):
+        """Connect or disconnect Arduino"""
+        if self.test_controller.is_arduino_connected():
+            # Disconnect
+            self.test_controller.disconnect_arduino()
+            self.btn_connect_arduino.setText("🔌 Verbinden")
+            self.arduino_status_label.setText("⚫ Nicht verbunden")
+            self.arduino_status_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+            self.statusBar().showMessage("Arduino getrennt")
+
+        else:
+            # Connect
+            port = self.arduino_port_combo.currentText()
+
+            if port == "Keine Ports gefunden":
+                QMessageBox.warning(self, "Warnung",
+                                    "Kein Arduino-Port verfügbar.\n\n"
+                                    "Bitte verbinden Sie den Arduino und klicken Sie auf '↻'.")
+                return
+
+            try:
+                if self.test_controller.connect_arduino(port):
+                    self.btn_connect_arduino.setText("🔌 Trennen")
+                    self.arduino_status_label.setText("🟢 Verbunden")
+                    self.arduino_status_label.setStyleSheet("color: #27ae60; font-weight: bold;")
+                    self.statusBar().showMessage(f"Arduino verbunden auf {port}")
+                    QMessageBox.information(self, "Erfolg",
+                                            f"Erfolgreich mit Arduino verbunden!\nPort: {port}")
+                else:
+                    QMessageBox.critical(self, "Fehler",
+                                        f"Verbindung zu {port} fehlgeschlagen.\n\n"
+                                        "Bitte überprüfen Sie:\n"
+                                        "- Arduino ist angeschlossen\n"
+                                        "- Richtiger Port ausgewählt\n"
+                                        "- Arduino-Sketch ist hochgeladen")
+
+            except Exception as e:
+                QMessageBox.critical(self, "Fehler",
+                                    f"Verbindungsfehler: {str(e)}")
 
     # ===== Recent Activity =====
 

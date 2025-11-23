@@ -6,12 +6,14 @@ Eine umfassende Software-Lösung für automatisierte Tests von Pneumatik-Kompone
 
 ### Kern-Funktionalitäten
 - ✅ **Automatisierte Test-Durchführung** für Pneumatikzylinder, Magnetventile und Initiatoren
+- ✅ **Arduino-Integration** für echte Hardware-Steuerung mit seriellem Protokoll
 - ✅ **Echtzeit-Überwachung** von Schaltzeiten, Temperaturen und Drücken
 - ✅ **Umfangreiche Datenbank** für Komponenten-Verwaltung
 - ✅ **Moderne grafische Benutzeroberfläche** (PyQt5)
 - ✅ **Automatische Trend-Erkennung** und Verschleißanalyse
 - ✅ **Vorhersage der Restlaufzeit** während laufender Tests
 - ✅ **Professionelle HTML-Berichte** mit Diagrammen und Statistiken
+- ✅ **Simulation-Modus** für Tests ohne Hardware
 
 ### Test-Parameter
 - Schaltzeiten (ms)
@@ -40,11 +42,30 @@ Für jede Komponente werden gespeichert:
 - Summe Schaltzyklen gesamt
 - Summe Betriebsstunden/-minuten
 
+## 🤖 Arduino-Integration
+
+Die Software kann mit **echter Hardware** über Arduino Uno gesteuert werden!
+
+### Hardware-Modus
+- **Arduino Uno** verbunden via USB/Serial
+- Echte Ventilsteuerung über MOSFET/Relais
+- Messung echter Schaltzeiten mit µs-Genauigkeit
+- Sensor-Überwachung (Initiatoren, Temperatur, Druck)
+- Umfangreiche Dokumentation in `arduino/README.md`
+
+### Simulation-Modus (Standard)
+- Keine Hardware erforderlich
+- Realistische Simulationsdaten
+- Ideal für Entwicklung und Tests
+
+**Siehe:** [Arduino Setup-Anleitung](arduino/README.md)
+
 ## 🚀 Installation
 
 ### Voraussetzungen
 - Python 3.8 oder höher
 - pip (Python Package Manager)
+- **Optional:** Arduino Uno mit hochgeladenem Sketch (siehe `arduino/`)
 
 ### Setup
 
@@ -147,7 +168,8 @@ Pr-fstandsoftwareDD/
 │   │   └── db_manager.py            # SQLite-Manager
 │   ├── controllers/                 # Business-Logik
 │   │   ├── __init__.py
-│   │   └── test_controller.py       # Test-Steuerung
+│   │   ├── test_controller.py       # Test-Steuerung
+│   │   └── arduino_controller.py    # Arduino-Kommunikation
 │   ├── analysis/                    # Analyse-Module
 │   │   ├── __init__.py
 │   │   ├── trend_analyzer.py        # Trend-Analyse
@@ -158,6 +180,10 @@ Pr-fstandsoftwareDD/
 │   └── gui/                         # Grafische Oberfläche
 │       ├── __init__.py
 │       └── main_window.py           # Haupt-GUI
+├── arduino/                         # Arduino-Firmware
+│   ├── pneumatic_test_stand/
+│   │   └── pneumatic_test_stand.ino # Arduino-Sketch
+│   └── README.md                    # Hardware-Dokumentation
 ├── data/                            # Datenverzeichnis
 │   ├── teststand.db                 # SQLite-Datenbank (auto-erstellt)
 │   ├── exports/                     # Generierte Berichte
@@ -170,6 +196,8 @@ Pr-fstandsoftwareDD/
 
 - **Python 3.8+**: Programmiersprache
 - **PyQt5**: Moderne GUI-Framework
+- **PySerial**: Serielle Kommunikation mit Arduino
+- **Arduino**: Hardware-Steuerung (optional)
 - **SQLite**: Eingebettete Datenbank
 - **NumPy/SciPy**: Numerische Berechnungen
 - **Pandas**: Datenanalyse

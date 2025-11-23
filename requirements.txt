@@ -3,6 +3,9 @@
 # GUI Framework
 PyQt5==5.15.10
 
+# Serial Communication with Arduino
+pyserial==3.5
+
 # Database
 # SQLite3 is included in Python standard library
 

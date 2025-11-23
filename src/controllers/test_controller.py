@@ -1,6 +1,6 @@
 """
 Test Controller - Manages test execution
-Simulates pneumatic component testing with realistic parameters
+Supports both real Arduino hardware and simulation mode
 """
 import time
 import random
@@ -11,12 +11,13 @@ from threading import Thread, Event
 
 from ..models.component import TestRun, TestMeasurement, ComponentStatus
 from ..database.db_manager import DatabaseManager
+from .arduino_controller import ArduinoController, SimulatedArduinoController
 
 
 class TestController:
     """Controls test execution for pneumatic components"""
 
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(self, db_manager: DatabaseManager, use_arduino: bool = False):
         self.db = db_manager
         self.current_test: Optional[TestRun] = None
         self.is_running = False
@@ -25,6 +26,29 @@ class TestController:
         self.test_thread: Optional[Thread] = None
         self.progress_callback: Optional[Callable] = None
         self.measurement_callback: Optional[Callable] = None
+
+        # Arduino control
+        self.use_arduino = use_arduino
+        self.arduino: Optional[ArduinoController] = None
+        if use_arduino:
+            self.arduino = ArduinoController()
+        else:
+            self.arduino = SimulatedArduinoController()
+
+    def connect_arduino(self, port: str) -> bool:
+        """Connect to Arduino on specified port"""
+        if self.arduino:
+            return self.arduino.connect(port)
+        return False
+
+    def disconnect_arduino(self):
+        """Disconnect from Arduino"""
+        if self.arduino:
+            self.arduino.disconnect()
+
+    def is_arduino_connected(self) -> bool:
+        """Check if Arduino is connected"""
+        return self.arduino is not None and self.arduino.is_connected
 
     def start_test(self, component_id: int, config_id: int,
                    progress_callback: Optional[Callable] = None,
@@ -86,9 +110,9 @@ class TestController:
         pressure_readings = []
         errors = []
 
-        base_cycle_time = config.cycle_interval_ms
-        base_temperature = 25.0 + random.uniform(-2, 2)
-        base_pressure = 6.0 + random.uniform(-0.5, 0.5)
+        # Start Arduino test if connected
+        if self.arduino and self.arduino.is_connected:
+            self.arduino.start_test()
 
         for cycle in range(config.target_cycles):
             # Check for stop signal
@@ -99,28 +123,60 @@ class TestController:
             # Check for pause signal
             self.pause_event.wait()
 
-            # Simulate cycle execution
+            # Execute cycle (either with Arduino or simulation)
             cycle_start = time.time()
 
-            # Simulate realistic variations
-            wear_factor = 1.0 + (cycle / config.target_cycles) * 0.1  # Gradual wear
-            cycle_time = base_cycle_time * wear_factor * random.uniform(0.95, 1.05)
+            if self.arduino and self.arduino.is_connected:
+                # Use Arduino for real measurement
+                result = self.arduino.trigger_cycle()
 
-            # Simulate temperature increase over time
-            temperature = base_temperature + (cycle / 1000) * 0.5 + random.uniform(-1, 1)
+                if result:
+                    cycle_time = result['cycle_time_ms']
+                    temperature = result['temperature']
+                    pressure = result['pressure']
+                    successful = result['success']
+                    error_msg = result.get('error', '')
+                else:
+                    # Arduino communication failed
+                    cycle_time = config.cycle_interval_ms
+                    temperature = 0.0
+                    pressure = 0.0
+                    successful = False
+                    error_msg = "Arduino-Kommunikationsfehler"
 
-            # Simulate pressure variations
-            pressure = base_pressure + random.uniform(-0.3, 0.3)
+            else:
+                # Simulation mode (original code)
+                base_cycle_time = config.cycle_interval_ms
+                base_temperature = 25.0 + random.uniform(-2, 2)
+                base_pressure = 6.0 + random.uniform(-0.5, 0.5)
 
-            # Simulate occasional errors (1% chance)
-            successful = random.random() > 0.01
-            error_msg = None
-            if not successful:
-                error_msg = random.choice([
-                    "Schaltzeit überschritten",
-                    "Druckabfall erkannt",
-                    "Sensor-Timeout"
-                ])
+                # Simulate realistic variations
+                wear_factor = 1.0 + (cycle / config.target_cycles) * 0.1  # Gradual wear
+                cycle_time = base_cycle_time * wear_factor * random.uniform(0.95, 1.05)
+
+                # Simulate temperature increase over time
+                temperature = base_temperature + (cycle / 1000) * 0.5 + random.uniform(-1, 1)
+
+                # Simulate pressure variations
+                pressure = base_pressure + random.uniform(-0.3, 0.3)
+
+                # Simulate occasional errors (1% chance)
+                successful = random.random() > 0.01
+                error_msg = None
+                if not successful:
+                    error_msg = random.choice([
+                        "Schaltzeit überschritten",
+                        "Druckabfall erkannt",
+                        "Sensor-Timeout"
+                    ])
+
+                # Simulate timing
+                elapsed = time.time() - cycle_start
+                wait_time = max(0, base_cycle_time / 1000.0 - elapsed)
+                time.sleep(wait_time)
+
+            # Record error if any
+            if not successful and error_msg:
                 errors.append({
                     'cycle': cycle,
                     'error': error_msg,
@@ -168,10 +224,9 @@ class TestController:
                 progress = (cycle + 1) / config.target_cycles * 100
                 self.progress_callback(progress, cycle + 1, config.target_cycles)
 
-            # Wait for next cycle
-            elapsed = time.time() - cycle_start
-            wait_time = max(0, base_cycle_time / 1000.0 - elapsed)
-            time.sleep(wait_time)
+        # Stop Arduino test
+        if self.arduino and self.arduino.is_connected:
+            self.arduino.stop_test()
 
         # Complete test
         if self.current_test.status == "Running":
