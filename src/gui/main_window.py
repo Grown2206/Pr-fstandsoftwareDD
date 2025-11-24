@@ -616,7 +616,9 @@ class TestStandMainWindow(QMainWindow):
     def on_progress_update(self, progress: float, completed: int, total: int):
         """Update progress display - thread-safe wrapper"""
         # Use QTimer.singleShot to execute in main thread
-        QTimer.singleShot(0, lambda: self._update_progress_ui(progress, completed, total))
+        # Copy values to avoid closure issues with mutable objects
+        p, c, t = float(progress), int(completed), int(total)
+        QTimer.singleShot(0, lambda p=p, c=c, t=t: self._update_progress_ui(p, c, t))
 
     def _update_progress_ui(self, progress: float, completed: int, total: int):
         """Actually update progress display (runs in main thread)"""
@@ -626,19 +628,29 @@ class TestStandMainWindow(QMainWindow):
     def on_measurement_update(self, measurement):
         """Update live data display - thread-safe wrapper"""
         # Use QTimer.singleShot to execute in main thread
-        QTimer.singleShot(0, lambda: self._update_measurement_ui(measurement))
+        # Extract all values to avoid issues with object references in lambda
+        try:
+            cycle_num = int(measurement.cycle_number)
+            switch_time = float(measurement.switching_time_ms)
+            temp = float(measurement.temperature) if measurement.temperature else None
+            press = float(measurement.pressure) if measurement.pressure else None
 
-    def _update_measurement_ui(self, measurement):
+            QTimer.singleShot(0, lambda cn=cycle_num, st=switch_time, tp=temp, pr=press:
+                             self._update_measurement_ui(cn, st, tp, pr))
+        except Exception as e:
+            print(f"Error in on_measurement_update: {e}")
+
+    def _update_measurement_ui(self, cycle_num, switch_time, temp, press):
         """Actually update measurement display (runs in main thread)"""
-        self.live_cycle_label.setText(f"Zyklus: {measurement.cycle_number:,}")
-        self.live_time_label.setText(f"Schaltzeit: {measurement.switching_time_ms:.2f} ms")
-        if measurement.temperature:
-            self.live_temp_label.setText(f"Temperatur: {measurement.temperature:.1f} °C")
-        if measurement.pressure:
-            self.live_pressure_label.setText(f"Druck: {measurement.pressure:.2f} bar")
+        self.live_cycle_label.setText(f"Zyklus: {cycle_num:,}")
+        self.live_time_label.setText(f"Schaltzeit: {switch_time:.2f} ms")
+        if temp is not None:
+            self.live_temp_label.setText(f"Temperatur: {temp:.1f} °C")
+        if press is not None:
+            self.live_pressure_label.setText(f"Druck: {press:.2f} bar")
 
         # Update time prediction
-        self.time_predictor.update(measurement.switching_time_ms)
+        self.time_predictor.update(switch_time)
 
     def update_test_status(self):
         """Update test status (called by timer)"""
