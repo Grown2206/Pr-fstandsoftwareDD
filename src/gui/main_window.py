@@ -23,6 +23,10 @@ from ..analysis.remaining_time_predictor import RemainingTimePredictor
 class TestStandMainWindow(QMainWindow):
     """Main application window"""
 
+    # Qt Signals for thread-safe GUI updates
+    progress_signal = pyqtSignal(float, int, int)
+    measurement_signal = pyqtSignal(int, float, object, object)
+
     def __init__(self):
         super().__init__()
         self.db = DatabaseManager()
@@ -30,6 +34,10 @@ class TestStandMainWindow(QMainWindow):
         self.report_generator = ReportGenerator(self.db)
         self.trend_analyzer = TrendAnalyzer(self.db)
         self.time_predictor = RemainingTimePredictor()
+
+        # Connect signals to slots for thread-safe updates
+        self.progress_signal.connect(self._update_progress_ui)
+        self.measurement_signal.connect(self._update_measurement_ui)
 
         self.init_ui()
         self.update_timer = QTimer()
@@ -628,23 +636,19 @@ class TestStandMainWindow(QMainWindow):
             self.statusBar().showMessage("Test gestoppt")
 
     def on_progress_update(self, progress: float, completed: int, total: int):
-        """Update progress display - thread-safe wrapper"""
+        """Update progress display - thread-safe wrapper using Qt Signal"""
         print(f"DEBUG: on_progress_update called: {progress:.1f}%, {completed}/{total}")
-        # Use QTimer.singleShot to execute in main thread
-        # Copy values to avoid closure issues with mutable objects
-        p, c, t = float(progress), int(completed), int(total)
-        QTimer.singleShot(0, lambda p=p, c=c, t=t: self._update_progress_ui(p, c, t))
+        # Emit signal - Qt automatically handles thread-safety
+        self.progress_signal.emit(float(progress), int(completed), int(total))
 
     def _update_progress_ui(self, progress: float, completed: int, total: int):
-        """Actually update progress display (runs in main thread)"""
+        """Actually update progress display (runs in main thread via signal/slot)"""
         print(f"DEBUG: _update_progress_ui executing: {progress:.1f}%")
         self.progress_bar.setValue(int(progress))
         self.progress_label.setText(f"Fortschritt: {completed:,} / {total:,} Zyklen ({progress:.1f}%)")
 
     def on_measurement_update(self, measurement):
-        """Update live data display - thread-safe wrapper"""
-        # Use QTimer.singleShot to execute in main thread
-        # Extract all values to avoid issues with object references in lambda
+        """Update live data display - thread-safe wrapper using Qt Signal"""
         try:
             cycle_num = int(measurement.cycle_number)
             switch_time = float(measurement.switching_time_ms)
@@ -653,15 +657,15 @@ class TestStandMainWindow(QMainWindow):
 
             print(f"DEBUG: on_measurement_update called: Cycle {cycle_num}, Time {switch_time:.2f}ms")
 
-            QTimer.singleShot(0, lambda cn=cycle_num, st=switch_time, tp=temp, pr=press:
-                             self._update_measurement_ui(cn, st, tp, pr))
+            # Emit signal - Qt automatically handles thread-safety
+            self.measurement_signal.emit(cycle_num, switch_time, temp, press)
         except Exception as e:
             print(f"ERROR in on_measurement_update: {e}")
             import traceback
             traceback.print_exc()
 
-    def _update_measurement_ui(self, cycle_num, switch_time, temp, press):
-        """Actually update measurement display (runs in main thread)"""
+    def _update_measurement_ui(self, cycle_num: int, switch_time: float, temp, press):
+        """Actually update measurement display (runs in main thread via signal/slot)"""
         print(f"DEBUG: _update_measurement_ui executing: Cycle {cycle_num}")
         self.live_cycle_label.setText(f"Zyklus: {cycle_num:,}")
         self.live_time_label.setText(f"Schaltzeit: {switch_time:.2f} ms")
