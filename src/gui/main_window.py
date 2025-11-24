@@ -19,6 +19,7 @@ from ..reporting.report_generator import ReportGenerator
 from ..analysis.trend_analyzer import TrendAnalyzer
 from ..analysis.remaining_time_predictor import RemainingTimePredictor
 from .arduino_visualization import ArduinoDashboard
+from .arduino_config_dialog import ArduinoConfigDialog
 
 
 class TestStandMainWindow(QMainWindow):
@@ -322,6 +323,10 @@ class TestStandMainWindow(QMainWindow):
         self.arduino_status_label = QLabel("⚫ Nicht verbunden")
         self.arduino_status_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
         arduino_layout.addWidget(self.arduino_status_label)
+
+        self.btn_config_arduino = QPushButton("⚙️ Konfigurieren")
+        self.btn_config_arduino.clicked.connect(self.open_arduino_config)
+        arduino_layout.addWidget(self.btn_config_arduino)
 
         arduino_layout.addStretch()
         arduino_group.setLayout(arduino_layout)
@@ -837,6 +842,13 @@ class TestStandMainWindow(QMainWindow):
                 self.arduino_port_combo.addItem(port)
         else:
             self.arduino_port_combo.addItem("Keine Ports gefunden")
+
+    def open_arduino_config(self):
+        """Öffnet Arduino-Konfigurationsdialog"""
+        dialog = ArduinoConfigDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            config = dialog.get_config()
+            self.statusBar().showMessage("Arduino-Konfiguration gespeichert", 3000)
 
     def toggle_arduino_connection(self):
         """Connect or disconnect Arduino"""

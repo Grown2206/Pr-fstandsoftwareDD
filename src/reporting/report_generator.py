@@ -102,15 +102,51 @@ class ReportGenerator:
 
         # Plot 2: Cycle distribution histogram
         fig, ax = plt.subplots(figsize=(10, 6))
-        ax.hist(cycle_times, bins=20, edgecolor='black', alpha=0.7)
+        ax.hist(cycle_times, bins=20, edgecolor='black', alpha=0.7, color='#3498db')
         ax.set_xlabel('Schaltzeit (ms)', fontsize=12)
         ax.set_ylabel('Häufigkeit', fontsize=12)
         ax.set_title('Verteilung der Schaltzeiten', fontsize=14, fontweight='bold')
         ax.grid(True, alpha=0.3, axis='y')
+
+        # Add statistical lines
+        import numpy as np
+        mean_val = np.mean(cycle_times)
+        std_val = np.std(cycle_times)
+        ax.axvline(mean_val, color='red', linestyle='--', linewidth=2, label=f'Mittelwert: {mean_val:.2f} ms')
+        ax.axvline(mean_val + std_val, color='orange', linestyle=':', linewidth=2, label=f'+1σ: {mean_val + std_val:.2f} ms')
+        ax.axvline(mean_val - std_val, color='orange', linestyle=':', linewidth=2, label=f'-1σ: {mean_val - std_val:.2f} ms')
+        ax.legend()
+
         plot_path = self.output_dir / f"cycle_time_dist_{component_id}.png"
         plt.savefig(plot_path, dpi=150, bbox_inches='tight')
         plt.close()
         plot_files['cycle_time_distribution'] = str(plot_path)
+
+        # Plot 3: Box Plot für Schaltzeiten
+        fig, ax = plt.subplots(figsize=(10, 6))
+        bp = ax.boxplot(cycle_times, vert=True, patch_artist=True)
+        bp['boxes'][0].set_facecolor('#3498db')
+        bp['boxes'][0].set_alpha(0.7)
+        ax.set_ylabel('Schaltzeit (ms)', fontsize=12)
+        ax.set_title('Box-Plot: Schaltzeit-Verteilung & Ausreißer', fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='y')
+
+        # Add statistics as text
+        q1, median, q3 = np.percentile(cycle_times, [25, 50, 75])
+        stats_text = f'Min: {min(cycle_times):.2f} ms\n'
+        stats_text += f'Q1: {q1:.2f} ms\n'
+        stats_text += f'Median: {median:.2f} ms\n'
+        stats_text += f'Q3: {q3:.2f} ms\n'
+        stats_text += f'Max: {max(cycle_times):.2f} ms\n'
+        stats_text += f'Mittelwert: {mean_val:.2f} ms\n'
+        stats_text += f'Std.Abw.: {std_val:.2f} ms'
+        ax.text(1.15, 0.5, stats_text, transform=ax.transAxes, fontsize=10,
+                verticalalignment='center', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+        plot_path = self.output_dir / f"cycle_time_boxplot_{component_id}.png"
+        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        plot_files['cycle_time_boxplot'] = str(plot_path)
 
         return plot_files
 
