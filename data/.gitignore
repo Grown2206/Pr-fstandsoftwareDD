@@ -1,0 +1,18 @@
+# Ignore all database files and exports
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.html
+*.pdf
+*.csv
+*.xlsx
+*.json
+
+# Ignore backup and export contents
+backups/*
+exports/*
+
+# Keep directory structure
+!.gitkeep
+!.gitignore
