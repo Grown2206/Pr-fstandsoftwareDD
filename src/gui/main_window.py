@@ -548,6 +548,7 @@ class TestStandMainWindow(QMainWindow):
 
     def start_test(self):
         """Start test"""
+        print("DEBUG: start_test() called")
         if self.test_component_combo.currentIndex() < 0:
             QMessageBox.warning(self, "Warnung", "Bitte wählen Sie eine Komponente aus")
             return
@@ -555,6 +556,8 @@ class TestStandMainWindow(QMainWindow):
         component_id = self.test_component_combo.currentData()
         target_cycles = self.test_cycles_spin.value()
         interval_ms = self.test_interval_spin.value()
+
+        print(f"DEBUG: Starting test - Component ID: {component_id}, Cycles: {target_cycles}, Interval: {interval_ms}ms")
 
         # Create configuration
         config = TestConfiguration(
@@ -567,15 +570,22 @@ class TestStandMainWindow(QMainWindow):
         )
 
         config_id = self.db.create_test_configuration(config)
+        print(f"DEBUG: Configuration created with ID: {config_id}")
 
         # Start test
         try:
+            print("DEBUG: Calling test_controller.start_test() with callbacks...")
+            print(f"DEBUG: progress_callback = {self.on_progress_update}")
+            print(f"DEBUG: measurement_callback = {self.on_measurement_update}")
+
             self.test_controller.start_test(
                 component_id,
                 config_id,
                 progress_callback=self.on_progress_update,
                 measurement_callback=self.on_measurement_update
             )
+
+            print("DEBUG: test_controller.start_test() returned successfully")
 
             self.time_predictor.start(target_cycles)
 
@@ -584,8 +594,12 @@ class TestStandMainWindow(QMainWindow):
             self.btn_stop_test.setEnabled(True)
 
             self.statusBar().showMessage("Test läuft...")
+            print("DEBUG: Test started, GUI updated")
 
         except Exception as e:
+            print(f"ERROR: Exception in start_test: {e}")
+            import traceback
+            traceback.print_exc()
             QMessageBox.critical(self, "Fehler", f"Test konnte nicht gestartet werden: {str(e)}")
 
     def pause_test(self):
@@ -615,6 +629,7 @@ class TestStandMainWindow(QMainWindow):
 
     def on_progress_update(self, progress: float, completed: int, total: int):
         """Update progress display - thread-safe wrapper"""
+        print(f"DEBUG: on_progress_update called: {progress:.1f}%, {completed}/{total}")
         # Use QTimer.singleShot to execute in main thread
         # Copy values to avoid closure issues with mutable objects
         p, c, t = float(progress), int(completed), int(total)
@@ -622,6 +637,7 @@ class TestStandMainWindow(QMainWindow):
 
     def _update_progress_ui(self, progress: float, completed: int, total: int):
         """Actually update progress display (runs in main thread)"""
+        print(f"DEBUG: _update_progress_ui executing: {progress:.1f}%")
         self.progress_bar.setValue(int(progress))
         self.progress_label.setText(f"Fortschritt: {completed:,} / {total:,} Zyklen ({progress:.1f}%)")
 
@@ -635,13 +651,18 @@ class TestStandMainWindow(QMainWindow):
             temp = float(measurement.temperature) if measurement.temperature else None
             press = float(measurement.pressure) if measurement.pressure else None
 
+            print(f"DEBUG: on_measurement_update called: Cycle {cycle_num}, Time {switch_time:.2f}ms")
+
             QTimer.singleShot(0, lambda cn=cycle_num, st=switch_time, tp=temp, pr=press:
                              self._update_measurement_ui(cn, st, tp, pr))
         except Exception as e:
-            print(f"Error in on_measurement_update: {e}")
+            print(f"ERROR in on_measurement_update: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _update_measurement_ui(self, cycle_num, switch_time, temp, press):
         """Actually update measurement display (runs in main thread)"""
+        print(f"DEBUG: _update_measurement_ui executing: Cycle {cycle_num}")
         self.live_cycle_label.setText(f"Zyklus: {cycle_num:,}")
         self.live_time_label.setText(f"Schaltzeit: {switch_time:.2f} ms")
         if temp is not None:
