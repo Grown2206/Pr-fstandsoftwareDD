@@ -18,6 +18,7 @@ from ..models.component import Component, ComponentType, ComponentStatus, TestCo
 from ..reporting.report_generator import ReportGenerator
 from ..analysis.trend_analyzer import TrendAnalyzer
 from ..analysis.remaining_time_predictor import RemainingTimePredictor
+from .arduino_visualization import ArduinoDashboard
 
 
 class TestStandMainWindow(QMainWindow):
@@ -399,6 +400,16 @@ class TestStandMainWindow(QMainWindow):
         live_group.setLayout(live_layout)
         layout.addWidget(live_group)
 
+        # Arduino Pin & Chart Visualization
+        visualization_group = QGroupBox("📊 Arduino Pin-Status & Live-Diagramme")
+        visualization_layout = QVBoxLayout()
+
+        self.arduino_dashboard = ArduinoDashboard()
+        visualization_layout.addWidget(self.arduino_dashboard)
+
+        visualization_group.setLayout(visualization_layout)
+        layout.addWidget(visualization_group)
+
         layout.addStretch()
         return widget
 
@@ -597,6 +608,9 @@ class TestStandMainWindow(QMainWindow):
 
             self.time_predictor.start(target_cycles)
 
+            # Diagramme für neuen Test leeren
+            self.arduino_dashboard.clear_charts()
+
             self.btn_start_test.setEnabled(False)
             self.btn_pause_test.setEnabled(True)
             self.btn_stop_test.setEnabled(True)
@@ -676,6 +690,20 @@ class TestStandMainWindow(QMainWindow):
 
         # Update time prediction
         self.time_predictor.update(switch_time)
+
+        # Update Arduino Dashboard Visualization
+        # Simuliere Ventil-Status (an während der Schaltzeit)
+        valve_on = (cycle_num % 2 == 0)  # Wechselt bei jedem Zyklus
+        sensor_triggered = (cycle_num % 2 == 1)  # Gegenphasig zum Ventil
+
+        self.arduino_dashboard.update_from_measurement(
+            cycle_num=cycle_num,
+            switch_time=switch_time,
+            temp=temp,
+            press=press,
+            valve_state=valve_on,
+            sensor_state=sensor_triggered
+        )
 
     def update_test_status(self):
         """Update test status (called by timer)"""
