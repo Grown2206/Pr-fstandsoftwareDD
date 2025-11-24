@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QDialog, QFormLayout, QLineEdit, QComboBox, QSpinBox, QHeaderView,
     QProgressBar, QTextEdit, QGroupBox, QGridLayout, QDoubleSpinBox
 )
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QMetaObject, Q_ARG
 from PyQt5.QtGui import QFont, QColor, QPalette
 import sys
 from datetime import datetime
@@ -614,12 +614,22 @@ class TestStandMainWindow(QMainWindow):
             self.statusBar().showMessage("Test gestoppt")
 
     def on_progress_update(self, progress: float, completed: int, total: int):
-        """Update progress display"""
+        """Update progress display - thread-safe wrapper"""
+        # Use QTimer.singleShot to execute in main thread
+        QTimer.singleShot(0, lambda: self._update_progress_ui(progress, completed, total))
+
+    def _update_progress_ui(self, progress: float, completed: int, total: int):
+        """Actually update progress display (runs in main thread)"""
         self.progress_bar.setValue(int(progress))
         self.progress_label.setText(f"Fortschritt: {completed:,} / {total:,} Zyklen ({progress:.1f}%)")
 
     def on_measurement_update(self, measurement):
-        """Update live data display"""
+        """Update live data display - thread-safe wrapper"""
+        # Use QTimer.singleShot to execute in main thread
+        QTimer.singleShot(0, lambda: self._update_measurement_ui(measurement))
+
+    def _update_measurement_ui(self, measurement):
+        """Actually update measurement display (runs in main thread)"""
         self.live_cycle_label.setText(f"Zyklus: {measurement.cycle_number:,}")
         self.live_time_label.setText(f"Schaltzeit: {measurement.switching_time_ms:.2f} ms")
         if measurement.temperature:
@@ -652,8 +662,11 @@ class TestStandMainWindow(QMainWindow):
             self.statusBar().showMessage("Test abgeschlossen")
             self.remaining_time_label.setText("")
 
-            QMessageBox.information(self, "Test abgeschlossen",
-                                    "Der Test wurde erfolgreich abgeschlossen!")
+            # Show message box in next event loop iteration to avoid paint conflicts
+            QTimer.singleShot(100, lambda: QMessageBox.information(
+                self, "Test abgeschlossen",
+                "Der Test wurde erfolgreich abgeschlossen!"
+            ))
 
     # ===== Reports =====
 
