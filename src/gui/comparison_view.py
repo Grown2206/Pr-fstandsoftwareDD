@@ -4,10 +4,11 @@ Comparison View - Vergleich mehrerer Komponenten und Testläufe
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QGroupBox, QTabWidget, QTableWidget, QTableWidgetItem,
-    QDateEdit, QCheckBox, QSplitter, QListWidgetItem, QAbstractItemView
+    QDateEdit, QCheckBox, QSplitter, QListWidgetItem, QAbstractItemView,
+    QMessageBox
 )
 from PyQt5.QtCore import Qt, QDate
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QColor
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
@@ -39,6 +40,12 @@ class ComparisonView(QWidget):
         self.selected_components = []
         self.comparison_data = {}
         self.init_ui()
+
+        # Zeige leere Diagramme und Tabelle beim Start
+        self.create_overlay_chart()
+        self.create_boxplot_chart()
+        self.create_trend_chart()
+        self.create_statistics_table()
 
     def init_ui(self):
         """UI initialisieren"""
@@ -233,6 +240,11 @@ class ComparisonView(QWidget):
         # Ausgewählte Komponenten sammeln
         selected_items = self.component_list.selectedItems()
         if not selected_items:
+            QMessageBox.warning(
+                self,
+                "Keine Auswahl",
+                "Bitte wählen Sie mindestens eine Komponente aus."
+            )
             return
 
         self.selected_components = []
@@ -244,51 +256,109 @@ class ComparisonView(QWidget):
         date_from = self.date_from.date().toPyDate()
         date_to = self.date_to.date().toPyDate()
 
-        # Daten laden
-        self.load_comparison_data(date_from, date_to)
+        # Validierung des Zeitbereichs
+        if date_from > date_to:
+            QMessageBox.warning(
+                self,
+                "Ungültiger Zeitbereich",
+                "Das Von-Datum muss vor dem Bis-Datum liegen."
+            )
+            return
 
-        # Diagramme erstellen
-        self.create_overlay_chart()
-        self.create_boxplot_chart()
-        self.create_trend_chart()
-        self.create_statistics_table()
+        # Daten laden
+        try:
+            self.load_comparison_data(date_from, date_to)
+
+            # Prüfen ob Daten gefunden wurden
+            if not self.comparison_data:
+                QMessageBox.information(
+                    self,
+                    "Keine Daten",
+                    f"Keine Test-Daten im Zeitbereich {date_from.strftime('%d.%m.%Y')} - {date_to.strftime('%d.%m.%Y')} gefunden.\n\n"
+                    "Bitte wählen Sie einen anderen Zeitbereich oder führen Sie zunächst Tests durch."
+                )
+                return
+
+            # Diagramme erstellen
+            self.create_overlay_chart()
+            self.create_boxplot_chart()
+            self.create_trend_chart()
+            self.create_statistics_table()
+
+            # Erfolgs-Nachricht
+            total_tests = sum(data['stats']['count'] for data in self.comparison_data.values())
+            QMessageBox.information(
+                self,
+                "Vergleich erfolgreich",
+                f"Vergleich für {len(self.comparison_data)} Komponenten erstellt.\n"
+                f"Insgesamt {total_tests} Tests analysiert."
+            )
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Fehler beim Vergleich",
+                f"Ein Fehler ist aufgetreten:\n\n{str(e)}"
+            )
+            import traceback
+            traceback.print_exc()
 
     def load_comparison_data(self, date_from, date_to):
         """Vergleichsdaten aus Datenbank laden"""
         self.comparison_data = {}
 
         for comp_id in self.selected_components:
-            # Komponenten-Info
-            component = self.db_manager.get_component(comp_id)
-            if not component:
+            try:
+                # Komponenten-Info
+                component = self.db_manager.get_component(comp_id)
+                if not component:
+                    print(f"WARNUNG: Komponente {comp_id} nicht gefunden")
+                    continue
+
+                # Test-Läufe im Zeitbereich
+                test_runs = self.db_manager.get_test_runs_by_component(
+                    comp_id, date_from, date_to
+                )
+
+                if test_runs:
+                    # Schaltzeiten extrahieren (nur gültige Werte)
+                    cycle_times = []
+                    timestamps = []
+
+                    for run in test_runs:
+                        avg_time = run.get('avg_cycle_time')
+                        timestamp = run.get('timestamp')
+
+                        if avg_time is not None and avg_time > 0 and timestamp:
+                            try:
+                                cycle_times.append(float(avg_time))
+                                timestamps.append(datetime.fromisoformat(timestamp))
+                            except (ValueError, TypeError) as e:
+                                print(f"WARNUNG: Ungültiger Wert in Test {run.get('id')}: {e}")
+                                continue
+
+                    if cycle_times:
+                        # Komponenten-Name aus designation_1 und designation_2
+                        comp_name = f"{component.designation_1}"
+                        if component.designation_2:
+                            comp_name += f" / {component.designation_2}"
+
+                        self.comparison_data[comp_id] = {
+                            'name': comp_name,
+                            'cycle_times': cycle_times,
+                            'timestamps': timestamps,
+                            'test_runs': test_runs,
+                            'stats': self.calculate_statistics(cycle_times)
+                        }
+                        print(f"INFO: {len(cycle_times)} Tests geladen für Komponente '{comp_name}'")
+                    else:
+                        print(f"INFO: Keine gültigen Test-Daten für Komponente {comp_id}")
+
+            except Exception as e:
+                print(f"FEHLER beim Laden der Daten für Komponente {comp_id}: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
-
-            # Test-Läufe im Zeitbereich
-            test_runs = self.db_manager.get_test_runs_by_component(
-                comp_id, date_from, date_to
-            )
-
-            if test_runs:
-                # Schaltzeiten extrahieren
-                cycle_times = [run['avg_cycle_time'] for run in test_runs if run['avg_cycle_time']]
-                timestamps = [
-                    datetime.fromisoformat(run['timestamp'])
-                    for run in test_runs if run['avg_cycle_time']
-                ]
-
-                if cycle_times:
-                    # Komponenten-Name aus designation_1 und designation_2
-                    comp_name = f"{component.designation_1}"
-                    if component.designation_2:
-                        comp_name += f" / {component.designation_2}"
-
-                    self.comparison_data[comp_id] = {
-                        'name': comp_name,
-                        'cycle_times': cycle_times,
-                        'timestamps': timestamps,
-                        'test_runs': test_runs,
-                        'stats': self.calculate_statistics(cycle_times)
-                    }
 
     def calculate_statistics(self, data: List[float]) -> Dict[str, float]:
         """Statistiken berechnen"""
@@ -312,6 +382,15 @@ class ComparisonView(QWidget):
         self.overlay_canvas.clear_figure()
 
         if not self.comparison_data:
+            # Zeige Hinweis-Text
+            fig = self.overlay_canvas.figure
+            ax = fig.add_subplot(111)
+            ax.text(0.5, 0.5, 'Keine Daten zum Anzeigen\n\nBitte wählen Sie Komponenten aus und\nklicken Sie auf "Vergleich durchführen"',
+                    ha='center', va='center', fontsize=14, color='gray')
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            self.overlay_canvas.draw()
             return
 
         fig = self.overlay_canvas.figure
@@ -354,6 +433,15 @@ class ComparisonView(QWidget):
         self.boxplot_canvas.clear_figure()
 
         if not self.comparison_data:
+            # Zeige Hinweis-Text
+            fig = self.boxplot_canvas.figure
+            ax = fig.add_subplot(111)
+            ax.text(0.5, 0.5, 'Keine Daten zum Anzeigen\n\nBitte wählen Sie Komponenten aus und\nklicken Sie auf "Vergleich durchführen"',
+                    ha='center', va='center', fontsize=14, color='gray')
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            self.boxplot_canvas.draw()
             return
 
         fig = self.boxplot_canvas.figure
@@ -400,6 +488,15 @@ class ComparisonView(QWidget):
         self.trend_canvas.clear_figure()
 
         if not self.comparison_data:
+            # Zeige Hinweis-Text
+            fig = self.trend_canvas.figure
+            ax = fig.add_subplot(111)
+            ax.text(0.5, 0.5, 'Keine Daten zum Anzeigen\n\nBitte wählen Sie Komponenten aus und\nklicken Sie auf "Vergleich durchführen"',
+                    ha='center', va='center', fontsize=14, color='gray')
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            self.trend_canvas.draw()
             return
 
         fig = self.trend_canvas.figure
@@ -454,8 +551,15 @@ class ComparisonView(QWidget):
     def create_statistics_table(self):
         """Statistik-Tabelle erstellen"""
         if not self.comparison_data:
-            self.stats_table.setRowCount(0)
-            self.stats_table.setColumnCount(0)
+            # Zeige Hinweis in Tabelle
+            self.stats_table.setRowCount(1)
+            self.stats_table.setColumnCount(1)
+            self.stats_table.setHorizontalHeaderLabels([''])
+            hint_item = QTableWidgetItem('Keine Daten zum Anzeigen\n\nBitte wählen Sie Komponenten aus und klicken Sie auf "Vergleich durchführen"')
+            hint_item.setTextAlignment(Qt.AlignCenter)
+            hint_item.setForeground(QColor('gray'))
+            self.stats_table.setItem(0, 0, hint_item)
+            self.stats_table.horizontalHeader().setStretchLastSection(True)
             return
 
         # Spalten: Komponente, Anzahl, Min, Max, Mittelwert, Median, Std.Abw, Q1, Q3
@@ -495,10 +599,13 @@ class ComparisonView(QWidget):
             means = [data['stats']['mean'] for data in self.comparison_data.values()]
             best_idx = means.index(min(means))
 
+            # Grüne Hintergrundfarbe für beste Komponente
+            green_color = QColor(144, 238, 144)  # Light green
+
             for col in range(self.stats_table.columnCount()):
                 item = self.stats_table.item(best_idx, col)
                 if item:
                     font = item.font()
                     font.setBold(True)
                     item.setFont(font)
-                    item.setBackground(Qt.green)
+                    item.setBackground(green_color)
