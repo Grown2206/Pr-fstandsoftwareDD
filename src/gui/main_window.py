@@ -20,6 +20,7 @@ from ..analysis.trend_analyzer import TrendAnalyzer
 from ..analysis.remaining_time_predictor import RemainingTimePredictor
 from .arduino_visualization import ArduinoDashboard
 from .arduino_config_dialog import ArduinoConfigDialog
+from .comparison_view import ComparisonView
 
 
 class TestStandMainWindow(QMainWindow):
@@ -70,6 +71,7 @@ class TestStandMainWindow(QMainWindow):
         self.tabs.addTab(self.create_test_tab(), "Test-Steuerung")
         self.tabs.addTab(self.create_reports_tab(), "Berichte")
         self.tabs.addTab(self.create_analysis_tab(), "Analyse")
+        self.tabs.addTab(self.create_comparison_tab(), "Vergleich")
 
         main_layout.addWidget(self.tabs)
 
@@ -493,6 +495,12 @@ class TestStandMainWindow(QMainWindow):
         layout.addWidget(results_group)
 
         return widget
+
+    def create_comparison_tab(self):
+        """Create comparison tab"""
+        self.comparison_view = ComparisonView(self.db)
+        self.comparison_view.refresh_component_list()
+        return self.comparison_view
 
     # ===== Component Management =====
 

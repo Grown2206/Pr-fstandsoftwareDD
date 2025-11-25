@@ -293,6 +293,32 @@ class DatabaseManager:
             """, (component_id,))
             return [self._row_to_test_run(row) for row in cursor.fetchall()]
 
+    def get_test_runs_by_component(self, component_id: int, date_from, date_to) -> List[Dict]:
+        """Get test runs for a component within a date range as dictionaries"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, start_time, average_cycle_time_ms, completed_cycles,
+                       target_cycles, status
+                FROM test_runs
+                WHERE component_id = ?
+                  AND date(start_time) BETWEEN date(?) AND date(?)
+                  AND status = 'completed'
+                ORDER BY start_time ASC
+            """, (component_id, date_from.isoformat(), date_to.isoformat()))
+
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    'id': row['id'],
+                    'timestamp': row['start_time'],
+                    'avg_cycle_time': row['average_cycle_time_ms'],
+                    'completed_cycles': row['completed_cycles'],
+                    'target_cycles': row['target_cycles'],
+                    'status': row['status']
+                })
+            return results
+
     # ===== Test Measurement Operations =====
 
     def create_measurement(self, measurement: TestMeasurement) -> int:
