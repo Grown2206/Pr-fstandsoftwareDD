@@ -206,7 +206,11 @@ class ComparisonView(QWidget):
         components = self.db_manager.get_all_components()
 
         for comp in components:
-            item = QListWidgetItem(f"{comp.name} (ID: {comp.id})")
+            # Komponenten-Name aus designation_1 und designation_2
+            comp_name = f"{comp.designation_1}"
+            if comp.designation_2:
+                comp_name += f" / {comp.designation_2}"
+            item = QListWidgetItem(f"{comp_name} (ID: {comp.id})")
             item.setData(Qt.UserRole, comp.id)
             self.component_list.addItem(item)
 
@@ -273,8 +277,13 @@ class ComparisonView(QWidget):
                 ]
 
                 if cycle_times:
+                    # Komponenten-Name aus designation_1 und designation_2
+                    comp_name = f"{component.designation_1}"
+                    if component.designation_2:
+                        comp_name += f" / {component.designation_2}"
+
                     self.comparison_data[comp_id] = {
-                        'name': component.name,
+                        'name': comp_name,
                         'cycle_times': cycle_times,
                         'timestamps': timestamps,
                         'test_runs': test_runs,
