@@ -21,6 +21,7 @@ from ..analysis.remaining_time_predictor import RemainingTimePredictor
 from .arduino_visualization import ArduinoDashboard
 from .arduino_config_dialog import ArduinoConfigDialog
 from .comparison_view import ComparisonView
+from ..reporting.test_archiver import TestArchiver
 
 
 class TestStandMainWindow(QMainWindow):
@@ -29,6 +30,7 @@ class TestStandMainWindow(QMainWindow):
     # Qt Signals for thread-safe GUI updates
     progress_signal = pyqtSignal(float, int, int)
     measurement_signal = pyqtSignal(int, float, object, object)
+    test_completed_signal = pyqtSignal(object)  # Signal when test completes
 
     def __init__(self):
         super().__init__()
@@ -37,10 +39,12 @@ class TestStandMainWindow(QMainWindow):
         self.report_generator = ReportGenerator(self.db)
         self.trend_analyzer = TrendAnalyzer(self.db)
         self.time_predictor = RemainingTimePredictor()
+        self.test_archiver = TestArchiver(self.db)
 
         # Connect signals to slots for thread-safe updates
         self.progress_signal.connect(self._update_progress_ui)
         self.measurement_signal.connect(self._update_measurement_ui)
+        self.test_completed_signal.connect(self._on_test_completed)
 
         self.init_ui()
         self.update_timer = QTimer()
@@ -456,6 +460,43 @@ class TestStandMainWindow(QMainWindow):
         reports_group.setLayout(reports_layout)
         layout.addWidget(reports_group)
 
+        # Archive management
+        archive_group = QGroupBox("📦 Test-Archiv")
+        archive_layout = QVBoxLayout()
+
+        # Archive controls
+        controls_layout = QHBoxLayout()
+
+        self.archive_days_spin = QSpinBox()
+        self.archive_days_spin.setMinimum(1)
+        self.archive_days_spin.setMaximum(36500)  # 100 years
+        self.archive_days_spin.setValue(90)
+        self.archive_days_spin.setSuffix(" Tage")
+        controls_layout.addWidget(QLabel("Tests älter als:"))
+        controls_layout.addWidget(self.archive_days_spin)
+
+        btn_archive = QPushButton("🗄️ Archivieren")
+        btn_archive.clicked.connect(self.archive_old_tests)
+        controls_layout.addWidget(btn_archive)
+
+        btn_list_archives = QPushButton("📋 Archive anzeigen")
+        btn_list_archives.clicked.connect(self.list_archives)
+        controls_layout.addWidget(btn_list_archives)
+
+        controls_layout.addStretch()
+        archive_layout.addLayout(controls_layout)
+
+        # Archive statistics
+        self.archive_stats_label = QLabel("Keine Archiv-Statistiken verfügbar")
+        self.archive_stats_label.setStyleSheet("padding: 5px; background-color: #ecf0f1; border-radius: 3px;")
+        archive_layout.addWidget(self.archive_stats_label)
+
+        # Update stats on init
+        self.update_archive_statistics()
+
+        archive_group.setLayout(archive_layout)
+        layout.addWidget(archive_group)
+
         layout.addStretch()
         return widget
 
@@ -614,7 +655,8 @@ class TestStandMainWindow(QMainWindow):
                 component_id,
                 config_id,
                 progress_callback=self.on_progress_update,
-                measurement_callback=self.on_measurement_update
+                measurement_callback=self.on_measurement_update,
+                completion_callback=self.on_test_completion
             )
 
             print("DEBUG: test_controller.start_test() returned successfully")
@@ -718,6 +760,40 @@ class TestStandMainWindow(QMainWindow):
             sensor_state=sensor_triggered
         )
 
+    def on_test_completion(self, test_run):
+        """Handle test completion - thread-safe wrapper using Qt Signal"""
+        print(f"DEBUG: on_test_completion called for test run {test_run.id}")
+        # Emit signal - Qt automatically handles thread-safety
+        self.test_completed_signal.emit(test_run)
+
+    def _on_test_completed(self, test_run):
+        """Actually handle test completion (runs in main thread via signal/slot)"""
+        print(f"DEBUG: _on_test_completed executing for test run {test_run.id}")
+
+        # Update UI
+        self.btn_start_test.setEnabled(True)
+        self.btn_pause_test.setEnabled(False)
+        self.btn_stop_test.setEnabled(False)
+
+        # Status-Nachricht
+        if test_run.status == "Completed":
+            self.statusBar().showMessage(f"Test abgeschlossen: {test_run.completed_cycles} Zyklen", 5000)
+            QMessageBox.information(self, "Test abgeschlossen",
+                                    f"Test erfolgreich abgeschlossen!\n\n"
+                                    f"Zyklen: {test_run.completed_cycles}\n"
+                                    f"Durchschnittliche Schaltzeit: {test_run.average_cycle_time_ms:.2f} ms")
+        elif test_run.status == "Aborted":
+            self.statusBar().showMessage("Test abgebrochen", 5000)
+
+        # Komponenten-Tabelle aktualisieren
+        self.load_components()
+
+        # Vergleichsansicht aktualisieren (falls geöffnet)
+        if hasattr(self, 'comparison_view'):
+            self.comparison_view.refresh_component_list()
+
+        print("DEBUG: Test completion handling finished")
+
     def update_test_status(self):
         """Update test status (called by timer)"""
         status = self.test_controller.get_current_status()
@@ -773,6 +849,150 @@ class TestStandMainWindow(QMainWindow):
                                     f"Bericht wurde erstellt:\n{report_path}")
         except Exception as e:
             QMessageBox.critical(self, "Fehler", f"Fehler beim Erstellen: {str(e)}")
+
+    def archive_old_tests(self):
+        """Archiviert alte Tests"""
+        days = self.archive_days_spin.value()
+
+        reply = QMessageBox.question(
+            self,
+            "Tests archivieren",
+            f"Tests älter als {days} Tage archivieren?\n\n"
+            "Die Tests werden in ein ZIP-Archiv exportiert.\n"
+            "Möchten Sie die Tests nach dem Archivieren aus der Datenbank löschen?",
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
+        )
+
+        if reply == QMessageBox.Cancel:
+            return
+
+        delete_after_archive = (reply == QMessageBox.Yes)
+
+        try:
+            result = self.test_archiver.archive_old_tests(days, delete_after_archive)
+
+            if result['success']:
+                QMessageBox.information(
+                    self,
+                    "Archivierung erfolgreich",
+                    result['message'] + "\n\n" +
+                    (f"Archiv: {result.get('archive_file', 'N/A')}" if result.get('archived_count', 0) > 0 else "")
+                )
+                self.update_archive_statistics()
+
+                # UI aktualisieren wenn Tests gelöscht wurden
+                if delete_after_archive and result.get('archived_count', 0) > 0:
+                    self.load_components()
+                    if hasattr(self, 'comparison_view'):
+                        self.comparison_view.refresh_component_list()
+            else:
+                QMessageBox.warning(self, "Fehler", result.get('message', 'Unbekannter Fehler'))
+
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Archivieren: {str(e)}")
+
+    def list_archives(self):
+        """Zeigt alle Archive an"""
+        archives = self.test_archiver.list_archives()
+
+        if not archives:
+            QMessageBox.information(self, "Archive", "Keine Archive gefunden")
+            return
+
+        # Dialog mit Archiv-Liste erstellen
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QHeaderView, QPushButton, QHBoxLayout
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Test-Archive")
+        dialog.setGeometry(200, 200, 800, 400)
+
+        layout = QVBoxLayout(dialog)
+
+        # Tabelle
+        table = QTableWidget()
+        table.setColumnCount(5)
+        table.setHorizontalHeaderLabels(["Dateiname", "Erstellt am", "Anzahl Tests", "Größe (MB)", "Aktionen"])
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        table.setRowCount(len(archives))
+
+        for i, archive in enumerate(archives):
+            table.setItem(i, 0, QTableWidgetItem(archive['filename']))
+            table.setItem(i, 1, QTableWidgetItem(archive['created'].strftime('%Y-%m-%d %H:%M:%S')))
+            table.setItem(i, 2, QTableWidgetItem(str(archive['test_count'])))
+            table.setItem(i, 3, QTableWidgetItem(f"{archive['size_mb']:.2f}"))
+
+            # Restore button
+            restore_btn = QPushButton("Wiederherstellen")
+            restore_btn.clicked.connect(lambda checked, path=archive['path']: self.restore_archive(path, dialog))
+            table.setCellWidget(i, 4, restore_btn)
+
+        layout.addWidget(table)
+
+        # Schließen-Button
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn_close = QPushButton("Schließen")
+        btn_close.clicked.connect(dialog.close)
+        btn_layout.addWidget(btn_close)
+        layout.addLayout(btn_layout)
+
+        dialog.exec_()
+
+    def restore_archive(self, archive_path: str, parent_dialog=None):
+        """Stellt ein Archiv wieder her"""
+        reply = QMessageBox.question(
+            self,
+            "Archiv wiederherstellen",
+            f"Archiv wiederherstellen?\n\n{archive_path}\n\n"
+            "Achtung: Dies kann zu Duplikaten führen, wenn Tests bereits in der Datenbank existieren.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        try:
+            result = self.test_archiver.restore_archive(archive_path)
+
+            if result['success']:
+                message = result['message']
+                if result.get('errors'):
+                    message += f"\n\nFehler:\n" + "\n".join(result['errors'][:5])
+                    if len(result['errors']) > 5:
+                        message += f"\n... und {len(result['errors']) - 5} weitere"
+
+                QMessageBox.information(self, "Wiederherstellung", message)
+
+                # UI aktualisieren
+                self.load_components()
+                if hasattr(self, 'comparison_view'):
+                    self.comparison_view.refresh_component_list()
+
+                if parent_dialog:
+                    parent_dialog.close()
+            else:
+                QMessageBox.warning(self, "Fehler", result.get('message', 'Unbekannter Fehler'))
+
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Wiederherstellen: {str(e)}")
+
+    def update_archive_statistics(self):
+        """Aktualisiert die Archiv-Statistiken"""
+        try:
+            stats = self.test_archiver.get_archive_statistics()
+
+            if stats['total_archives'] == 0:
+                self.archive_stats_label.setText("📊 Keine Archive vorhanden")
+            else:
+                self.archive_stats_label.setText(
+                    f"📊 Archive: {stats['total_archives']} | "
+                    f"Tests: {stats['total_tests']} | "
+                    f"Größe: {stats['total_size_mb']} MB | "
+                    f"Ältestes: {stats['oldest_archive']} | "
+                    f"Neuestes: {stats['newest_archive']}"
+                )
+        except Exception as e:
+            self.archive_stats_label.setText(f"⚠️ Fehler beim Laden der Statistiken: {str(e)}")
 
     # ===== Analysis =====
 
@@ -857,6 +1077,9 @@ class TestStandMainWindow(QMainWindow):
         if dialog.exec_() == QDialog.Accepted:
             config = dialog.get_config()
             self.statusBar().showMessage("Arduino-Konfiguration gespeichert", 3000)
+            # Visualisierung aktualisieren
+            if hasattr(self, 'arduino_dashboard'):
+                self.arduino_dashboard.reload_config()
 
     def toggle_arduino_connection(self):
         """Connect or disconnect Arduino"""

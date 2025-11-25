@@ -26,6 +26,7 @@ class TestController:
         self.test_thread: Optional[Thread] = None
         self.progress_callback: Optional[Callable] = None
         self.measurement_callback: Optional[Callable] = None
+        self.completion_callback: Optional[Callable] = None
 
         # Arduino control
         self.use_arduino = use_arduino
@@ -52,7 +53,8 @@ class TestController:
 
     def start_test(self, component_id: int, config_id: int,
                    progress_callback: Optional[Callable] = None,
-                   measurement_callback: Optional[Callable] = None):
+                   measurement_callback: Optional[Callable] = None,
+                   completion_callback: Optional[Callable] = None):
         """Start a new test run"""
         if self.is_running:
             raise RuntimeError("Test is already running")
@@ -93,6 +95,7 @@ class TestController:
         # Set callbacks
         self.progress_callback = progress_callback
         self.measurement_callback = measurement_callback
+        self.completion_callback = completion_callback
 
         # Start test in separate thread
         self.is_running = True
@@ -248,6 +251,10 @@ class TestController:
         # Final progress update
         if self.progress_callback:
             self.progress_callback(100, self.current_test.completed_cycles, config.target_cycles)
+
+        # Call completion callback
+        if self.completion_callback:
+            self.completion_callback(self.current_test)
 
     def pause_test(self):
         """Pause the running test"""

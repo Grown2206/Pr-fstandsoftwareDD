@@ -11,6 +11,8 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from collections import deque
 import numpy as np
+import json
+import os
 
 
 class LEDIndicator(QWidget):
@@ -111,31 +113,100 @@ class PinStatusWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.config = self.load_config()
+        self.pin_indicators = {}  # Dict für dynamische Pin-Zugriffe
         self.init_ui()
 
+    def load_config(self):
+        """Lädt Arduino-Konfiguration"""
+        config_path = 'data/arduino_config.json'
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Fehler beim Laden der Arduino-Konfiguration: {e}")
+
+        # Standard-Konfiguration zurückgeben
+        return {
+            'pins': {
+                'valve_output': 2,
+                'sensor_input': 3,
+                'initiator_1': 4,
+                'initiator_2': 5,
+                'emergency_stop': 6,
+                'status_led': 13,
+                'temp_analog': 0,
+                'pressure_analog': 1
+            },
+            'components': {
+                'valves': [{'name': 'Hauptventil', 'pin': 2, 'type': 'Magnetventil', 'active': True}],
+                'sensors': [{'name': 'End-Sensor', 'pin': 3, 'type': 'Induktiv', 'active': True}],
+                'initiators': []
+            }
+        }
+
     def init_ui(self):
-        """Initialisiert UI"""
+        """Initialisiert UI dynamisch basierend auf Konfiguration"""
         layout = QVBoxLayout(self)
 
         # Digital Pins Group
         digital_group = QGroupBox("Digitale Ein-/Ausgänge")
         digital_layout = QGridLayout()
+        row = 0
 
-        # Ausgänge
-        output_label = QLabel("Ausgänge:")
+        # Ausgänge (Ventile)
+        output_label = QLabel("Ausgänge (Ventile):")
         output_label.setFont(QFont("Arial", 10, QFont.Bold))
-        digital_layout.addWidget(output_label, 0, 0)
+        digital_layout.addWidget(output_label, row, 0)
+        row += 1
 
-        self.valve_led = LEDIndicator("D2 - Ventil (Output)")
-        digital_layout.addWidget(self.valve_led, 1, 0)
+        # Dynamische Ventil-LEDs
+        valves = self.config.get('components', {}).get('valves', [])
+        for valve in valves:
+            if valve.get('active', True):
+                pin = valve['pin']
+                name = valve['name']
+                led = LEDIndicator(f"D{pin} - {name}")
+                digital_layout.addWidget(led, row, 0)
+                self.pin_indicators[f'valve_{pin}'] = led
+                row += 1
 
-        # Eingänge
-        input_label = QLabel("Eingänge:")
+        # Eingänge (Sensoren & Initiatoren)
+        input_label = QLabel("Eingänge (Sensoren/Initiatoren):")
         input_label.setFont(QFont("Arial", 10, QFont.Bold))
-        digital_layout.addWidget(input_label, 2, 0)
+        digital_layout.addWidget(input_label, row, 0)
+        row += 1
 
-        self.sensor_led = LEDIndicator("D3 - Sensor (Input)")
-        digital_layout.addWidget(self.sensor_led, 3, 0)
+        # Dynamische Sensor-LEDs
+        sensors = self.config.get('components', {}).get('sensors', [])
+        for sensor in sensors:
+            if sensor.get('active', True):
+                pin = sensor['pin']
+                name = sensor['name']
+                led = LEDIndicator(f"D{pin} - {name}")
+                digital_layout.addWidget(led, row, 0)
+                self.pin_indicators[f'sensor_{pin}'] = led
+                row += 1
+
+        # Dynamische Initiator-LEDs
+        initiators = self.config.get('components', {}).get('initiators', [])
+        for initiator in initiators:
+            if initiator.get('active', True):
+                pin = initiator['pin']
+                name = initiator['name']
+                led = LEDIndicator(f"D{pin} - {name}")
+                digital_layout.addWidget(led, row, 0)
+                self.pin_indicators[f'initiator_{pin}'] = led
+                row += 1
+
+        # Not-Aus (falls vorhanden)
+        emergency_pin = self.config['pins'].get('emergency_stop')
+        if emergency_pin:
+            led = LEDIndicator(f"D{emergency_pin} - Not-Aus")
+            digital_layout.addWidget(led, row, 0)
+            self.pin_indicators['emergency_stop'] = led
+            row += 1
 
         digital_group.setLayout(digital_layout)
         layout.addWidget(digital_group)
@@ -155,13 +226,38 @@ class PinStatusWidget(QWidget):
 
         layout.addStretch()
 
-    def update_valve_status(self, is_on: bool):
+    def update_valve_status(self, is_on: bool, pin: int = None):
         """Aktualisiert Ventil-Status"""
-        self.valve_led.set_state(is_on)
+        if pin is None:
+            # Standard: Erstes Ventil
+            pin = self.config['pins'].get('valve_output', 2)
 
-    def update_sensor_status(self, is_triggered: bool):
+        key = f'valve_{pin}'
+        if key in self.pin_indicators:
+            self.pin_indicators[key].set_state(is_on)
+
+    def update_sensor_status(self, is_triggered: bool, pin: int = None):
         """Aktualisiert Sensor-Status"""
-        self.sensor_led.set_state(is_triggered)
+        if pin is None:
+            # Standard: Erster Sensor
+            pin = self.config['pins'].get('sensor_input', 3)
+
+        key = f'sensor_{pin}'
+        if key in self.pin_indicators:
+            self.pin_indicators[key].set_state(is_triggered)
+
+    def update_initiator_status(self, initiator_num: int, is_triggered: bool):
+        """Aktualisiert Initiator-Status"""
+        pin = self.config['pins'].get(f'initiator_{initiator_num}')
+        if pin:
+            key = f'initiator_{pin}'
+            if key in self.pin_indicators:
+                self.pin_indicators[key].set_state(is_triggered)
+
+    def update_emergency_stop_status(self, is_active: bool):
+        """Aktualisiert Not-Aus-Status"""
+        if 'emergency_stop' in self.pin_indicators:
+            self.pin_indicators['emergency_stop'].set_state(is_active)
 
     def update_temperature(self, temp: float):
         """Aktualisiert Temperatur"""
@@ -170,6 +266,21 @@ class PinStatusWidget(QWidget):
     def update_pressure(self, pressure: float):
         """Aktualisiert Druck"""
         self.pressure_gauge.set_value(pressure)
+
+    def reload_config(self):
+        """Lädt Konfiguration neu und baut UI neu auf"""
+        self.config = self.load_config()
+        # UI neu aufbauen
+        # Altes Layout löschen
+        layout = self.layout()
+        if layout:
+            while layout.count():
+                child = layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+
+        self.pin_indicators.clear()
+        self.init_ui()
 
 
 class LiveChartWidget(QWidget):
@@ -297,3 +408,7 @@ class ArduinoDashboard(QWidget):
         self.temp_chart.clear()
         self.pressure_chart.clear()
         self.cycle_time_chart.clear()
+
+    def reload_config(self):
+        """Lädt Arduino-Konfiguration neu"""
+        self.pin_status.reload_config()
